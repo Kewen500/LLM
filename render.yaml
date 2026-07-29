@@ -1,0 +1,11 @@
+services:
+  - type: web
+    name: time-series-llm-report
+    env: python
+    plan: free
+    buildCommand: pip install -r requirements-deploy.txt
+    startCommand: streamlit run app.py --server.port $PORT --server.address 0.0.0.0
+    autoDeploy: true
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.7
