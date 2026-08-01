@@ -16,6 +16,7 @@ from src.experiment_tracking import build_experiment_record, experiments_frame
 from src.exporters import dataframe_to_csv_bytes, markdown_to_docx_bytes, markdown_to_pdf_bytes
 from src.forecasting import MODEL_DISPLAY_NAMES, choose_best_model, display_model_name, run_selected_models_with_errors
 from src.history_store import save_analysis_run
+from src.local_private_settings import load_local_private_settings, update_local_private_section
 from src.llm_client import generate_openai_compatible_report
 from src.llm_presets import (
     CUSTOM_MODEL_LABEL,
@@ -130,14 +131,27 @@ def available_llm_presets():
     return {**LLM_PROVIDER_PRESETS, **custom_presets}
 
 
+def local_private_settings() -> dict:
+    if "local_private_settings" not in st.session_state:
+        st.session_state["local_private_settings"] = load_local_private_settings()
+    return st.session_state["local_private_settings"]
+
+
+def save_local_section(section: str, values: dict) -> None:
+    st.session_state["local_private_settings"] = update_local_private_section(section, values)
+
+
 def render_llm_api_settings(default_max_tokens: int):
     presets = available_llm_presets()
+    private_llm = local_private_settings().get("llm", {})
     provider_options = list(presets.keys()) + [CUSTOM_PROVIDER_LABEL]
-    provider = st.selectbox("API 服务商", provider_options)
+    saved_provider = private_llm.get("provider")
+    provider_index = provider_options.index(saved_provider) if saved_provider in provider_options else 0
+    provider = st.selectbox("API 服务商", provider_options, index=provider_index)
 
     if provider == CUSTOM_PROVIDER_LABEL:
-        api_url = st.text_input("自定义 API URL", value="https://api.example.com/v1")
-        model_name = st.text_input("自定义 Model Name", value="")
+        api_url = st.text_input("自定义 API URL", value=private_llm.get("api_url", "https://api.example.com/v1"))
+        model_name = st.text_input("自定义 Model Name", value=private_llm.get("model_name", ""))
         preset_name = st.text_input("保存为预设名称（可选）", value="")
         if st.button("保存为本地预设"):
             if api_url.strip() and model_name.strip():
@@ -153,17 +167,40 @@ def render_llm_api_settings(default_max_tokens: int):
     else:
         preset = presets[provider]
         st.caption(preset.get("note", ""))
-        api_url = st.text_input("API URL", value=preset["api_url"])
+        default_api_url = private_llm.get("api_url", preset["api_url"]) if provider == saved_provider else preset["api_url"]
+        api_url = st.text_input("API URL", value=default_api_url)
         model_options = list(dict.fromkeys(preset["models"] + [CUSTOM_MODEL_LABEL]))
-        model_choice = st.selectbox("Model Name", model_options)
+        saved_model_name = private_llm.get("model_name", "") if provider == saved_provider else ""
+        if saved_model_name in model_options:
+            model_index = model_options.index(saved_model_name)
+        elif saved_model_name:
+            model_index = model_options.index(CUSTOM_MODEL_LABEL)
+        else:
+            model_index = 0
+        model_choice = st.selectbox("Model Name", model_options, index=model_index)
         if model_choice == CUSTOM_MODEL_LABEL:
-            model_name = st.text_input("自定义 Model Name", value="")
+            model_name = st.text_input("自定义 Model Name", value=saved_model_name)
         else:
             model_name = model_choice
 
-    api_key = st.text_input("API Key", type="password")
-    max_tokens = st.slider("报告最大输出长度（token）", min_value=600, max_value=3000, value=default_max_tokens, step=200)
+    api_key = st.text_input("API Key", value=private_llm.get("api_key", ""), type="password")
+    saved_max_tokens = int(private_llm.get("max_tokens", default_max_tokens))
+    saved_max_tokens = min(3000, max(600, saved_max_tokens))
+    max_tokens = st.slider("报告最大输出长度（token）", min_value=600, max_value=3000, value=saved_max_tokens, step=200)
     show_prompt = st.checkbox("显示发送给 LLM 的 Prompt", value=False)
+    st.caption("本机保存会写入 data/local_private_settings.json；该文件已加入 .gitignore，不会上传 GitHub。")
+    if st.button("保存 LLM API 设置到本机"):
+        save_local_section(
+            "llm",
+            {
+                "provider": provider,
+                "api_url": api_url,
+                "model_name": model_name,
+                "api_key": api_key,
+                "max_tokens": max_tokens,
+            },
+        )
+        st.success("已保存到本机私有配置，下次本地打开会自动填充。")
     return api_url, model_name, api_key, max_tokens, show_prompt
 
 
@@ -190,12 +227,29 @@ def render_knowledge_settings():
 
 
 def render_history_settings():
+    private_supabase = local_private_settings().get("supabase", {})
     with st.expander("历史记录保存（Supabase，可选）", expanded=False):
-        enabled = st.checkbox("保存本次分析到 Supabase", value=False)
-        supabase_url = st.text_input("Supabase Project URL", value="", placeholder="https://xxxx.supabase.co")
-        supabase_key = st.text_input("Supabase anon key", value="", type="password")
-        table_name = st.text_input("表名", value="analysis_runs")
+        enabled = st.checkbox("保存本次分析到 Supabase", value=bool(private_supabase.get("enabled", False)))
+        supabase_url = st.text_input(
+            "Supabase Project URL",
+            value=private_supabase.get("url", ""),
+            placeholder="https://xxxx.supabase.co",
+        )
+        supabase_key = st.text_input("Supabase anon key", value=private_supabase.get("anon_key", ""), type="password")
+        table_name = st.text_input("表名", value=private_supabase.get("table", "analysis_runs"))
         st.caption("先在 Supabase SQL Editor 执行项目里的 supabase-schema.sql。不要在公开仓库中保存 API Key。")
+        st.caption("本机保存会写入 data/local_private_settings.json；该文件已加入 .gitignore，不会上传 GitHub。")
+        if st.button("保存 Supabase 设置到本机"):
+            save_local_section(
+                "supabase",
+                {
+                    "enabled": enabled,
+                    "url": supabase_url,
+                    "anon_key": supabase_key,
+                    "table": table_name,
+                },
+            )
+            st.success("已保存到本机私有配置，下次本地打开会自动填充。")
     return enabled, supabase_url, supabase_key, table_name
 
 

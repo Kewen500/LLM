@@ -89,6 +89,16 @@ streamlit run app.py
 
 LLM 报告生成失败时，系统会自动回退为本地模板报告，并在页面显示错误原因和发送给 LLM 的 Prompt，便于调试。
 
+## 本机私有配置
+
+本地运行时，可以在页面中点击“保存 LLM API 设置到本机”和“保存 Supabase 设置到本机”。系统会把 `API Key`、`Supabase Project URL`、`Supabase anon key` 等内容保存到：
+
+```text
+data/local_private_settings.json
+```
+
+这个文件已经写入 `.gitignore`，不会上传到 GitHub。注意：该文件是本机明文保存，适合个人电脑免重复输入；公开部署给他人使用时，不建议保存访客的 API Key。
+
 ## RAG 知识库放置位置
 
 RAG 解释文档统一放在项目根目录的 `knowledge/` 文件夹中：

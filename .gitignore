@@ -7,6 +7,7 @@ __pycache__/
 
 .streamlit/secrets.toml
 data/custom_llm_presets.json
+data/local_private_settings.json
 
 .matplotlib/
 streamlit_*.png
