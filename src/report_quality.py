@@ -46,9 +46,9 @@ def evaluate_report_quality(report: str, report_input: ReportInput) -> list[Qual
     if report_input.knowledge_context:
         checks.append(
             QualityCheck(
-                "使用业务知识库",
+                "使用 RAG 知识库",
                 "业务知识" in report or "知识库" in report or any(token in report for token in _knowledge_keywords(report_input.knowledge_context)),
-                "启用 RAG 时，报告应体现业务知识库中的口径、规则或背景。",
+                "启用 RAG 时，报告应体现 RAG 知识库中的口径、规则或背景。",
             )
         )
     known_model_names = {display_model_name(name) for name in report_input.all_results}

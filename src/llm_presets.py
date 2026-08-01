@@ -5,7 +5,7 @@ from pathlib import Path
 
 
 CUSTOM_PROVIDER_LABEL = "自定义"
-CUSTOM_MODEL_LABEL = "自定义模型"
+CUSTOM_MODEL_LABEL = "自定义 Model Name"
 CUSTOM_PRESETS_PATH = Path(__file__).resolve().parents[1] / "data" / "custom_llm_presets.json"
 
 
@@ -13,7 +13,7 @@ LLM_PROVIDER_PRESETS = {
     "DeepSeek": {
         "api_url": "https://api.deepseek.com",
         "models": ["deepseek-v4-flash", "deepseek-v4-pro", "deepseek-chat", "deepseek-reasoner"],
-        "note": "OpenAI 兼容接口；不要填写 /anthropic。",
+        "note": "OpenAI-compatible API；不要填写 /anthropic。",
     },
     "Kimi 国内": {
         "api_url": "https://api.moonshot.cn/v1",
@@ -28,12 +28,12 @@ LLM_PROVIDER_PRESETS = {
     "OpenAI": {
         "api_url": "https://api.openai.com/v1",
         "models": ["gpt-5.2", "gpt-5.2-mini", "gpt-5.1", "gpt-4o-mini"],
-        "note": "OpenAI 官方接口；不同账号可用模型可能不同。",
+        "note": "OpenAI official API；不同账号可用 model id 可能不同。",
     },
-    "阿里云百炼 / Qwen": {
+    "Alibaba Cloud Bailian / Qwen": {
         "api_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
         "models": ["qwen-plus", "qwen-max", "qwen-turbo"],
-        "note": "百炼 OpenAI 兼容模式；企业工作空间域名可在自定义里填写。",
+        "note": "Bailian OpenAI-compatible mode；企业工作空间域名可在自定义里填写。",
     },
 }
 
@@ -52,7 +52,7 @@ def save_custom_llm_preset(name: str, api_url: str, model_name: str) -> dict:
     presets[name] = {
         "api_url": api_url,
         "models": [model_name],
-        "note": "本地手动添加的 OpenAI 兼容接口预设。",
+        "note": "本地手动添加的 OpenAI-compatible API 预设。",
     }
     CUSTOM_PRESETS_PATH.parent.mkdir(parents=True, exist_ok=True)
     CUSTOM_PRESETS_PATH.write_text(

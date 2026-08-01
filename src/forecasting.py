@@ -25,12 +25,12 @@ class ModelRun:
 
 
 MODEL_DISPLAY_NAMES = {
-    "Moving Average": "移动平均",
-    "Seasonal Naive": "季节性朴素模型",
-    "Linear Trend": "线性趋势",
+    "Moving Average": "Moving Average",
+    "Seasonal Naive": "Seasonal Naive",
+    "Linear Trend": "Linear Trend",
     "ARIMA": "ARIMA",
     "Prophet": "Prophet",
-    "Prophet-like Decomposition": "类 Prophet 趋势分解",
+    "Prophet-like Decomposition": "Prophet-like Decomposition",
     "LSTM": "LSTM",
 }
 

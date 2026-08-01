@@ -26,7 +26,7 @@ from src.report_quality import evaluate_report_quality, quality_checks_frame, qu
 from src.report_generator import ReportInput, build_llm_prompt, generate_template_report
 
 
-st.set_page_config(page_title="时间序列预测与大模型报告生成", layout="wide")
+st.set_page_config(page_title="时间序列预测与 LLM 报告生成", layout="wide")
 
 FORECAST_MODEL_OPTIONS = ["Moving Average", "Seasonal Naive", "Linear Trend", "ARIMA", "Prophet", "LSTM"]
 KNOWLEDGE_DIR = Path(__file__).parent / "knowledge"
@@ -119,8 +119,8 @@ def render_llm_api_settings(default_max_tokens: int):
     provider = st.selectbox("API 服务商", provider_options)
 
     if provider == CUSTOM_PROVIDER_LABEL:
-        api_url = st.text_input("自定义接口地址", value="https://api.example.com/v1")
-        model_name = st.text_input("自定义模型名称", value="")
+        api_url = st.text_input("自定义 API URL", value="https://api.example.com/v1")
+        model_name = st.text_input("自定义 Model Name", value="")
         preset_name = st.text_input("保存为预设名称（可选）", value="")
         if st.button("保存为本地预设"):
             if api_url.strip() and model_name.strip():
@@ -132,26 +132,26 @@ def render_llm_api_settings(default_max_tokens: int):
                 )
                 st.success("已保存为本地预设，刷新或重启后仍可选用。")
             else:
-                st.warning("请先填写 API URL 和模型名称。")
+                st.warning("请先填写 API URL 和 Model Name。")
     else:
         preset = presets[provider]
         st.caption(preset.get("note", ""))
-        api_url = st.text_input("接口地址", value=preset["api_url"])
+        api_url = st.text_input("API URL", value=preset["api_url"])
         model_options = list(dict.fromkeys(preset["models"] + [CUSTOM_MODEL_LABEL]))
-        model_choice = st.selectbox("模型名称", model_options)
+        model_choice = st.selectbox("Model Name", model_options)
         if model_choice == CUSTOM_MODEL_LABEL:
-            model_name = st.text_input("自定义模型名称", value="")
+            model_name = st.text_input("自定义 Model Name", value="")
         else:
             model_name = model_choice
 
-    api_key = st.text_input("API 密钥", type="password")
+    api_key = st.text_input("API Key", type="password")
     max_tokens = st.slider("报告最大输出长度（token）", min_value=600, max_value=3000, value=default_max_tokens, step=200)
-    show_prompt = st.checkbox("显示发送给大模型的提示词", value=False)
+    show_prompt = st.checkbox("显示发送给 LLM 的 Prompt", value=False)
     return api_url, model_name, api_key, max_tokens, show_prompt
 
 
 def render_knowledge_settings():
-    with st.expander("业务知识库（RAG，可选）", expanded=False):
+    with st.expander("RAG 知识库（可选）", expanded=False):
         st.caption("项目会自动读取 knowledge/ 目录中的 .md、.txt、.csv 文件；也可以临时上传或粘贴知识。")
         use_local_knowledge = st.checkbox("使用项目内置知识库", value=True)
         if KNOWLEDGE_DIR.exists():
@@ -217,7 +217,7 @@ def default_selected_models() -> list[str]:
     return defaults
 
 
-st.title("时间序列预测与大模型自动分析报告生成系统")
+st.title("时间序列预测与 LLM 自动分析报告生成系统")
 
 with st.sidebar:
     st.header("数据与参数")
@@ -236,13 +236,13 @@ with st.sidebar:
         default=default_selected_models(),
         format_func=display_model_name,
     )
-    report_mode = st.radio("报告生成方式", ["本地模板报告", "大模型 API"], horizontal=True)
+    report_mode = st.radio("报告生成方式", ["本地模板报告", "LLM API"], horizontal=True)
     api_url = "https://api.deepseek.com"
     model_name = "deepseek-v4-flash"
     api_key = ""
     max_tokens = 1600
     show_prompt = False
-    if report_mode == "大模型 API":
+    if report_mode == "LLM API":
         api_url, model_name, api_key, max_tokens, show_prompt = render_llm_api_settings(max_tokens)
     use_local_knowledge, knowledge_files, manual_knowledge = render_knowledge_settings()
     save_history, supabase_url, supabase_key, history_table = render_history_settings()
@@ -290,7 +290,7 @@ if run_button or uploaded_file is None:
         report = template_report
         report_source = "本地模板报告"
         llm_error = None
-        if report_mode == "大模型 API":
+        if report_mode == "LLM API":
             try:
                 report = generate_openai_compatible_report(
                     prompt=prompt,
@@ -299,7 +299,7 @@ if run_button or uploaded_file is None:
                     api_url=api_url,
                     max_tokens=max_tokens,
                 )
-                report_source = f"大模型生成报告：{model_name}"
+                report_source = f"LLM 生成报告：{model_name}"
             except Exception as exc:
                 llm_error = str(exc)
         quality_checks = evaluate_report_quality(report, report_input)
@@ -339,15 +339,15 @@ if run_button or uploaded_file is None:
             with st.expander("本次检索到的业务知识", expanded=False):
                 st.text(knowledge_context)
         if llm_error:
-            st.warning("大模型报告生成失败，已自动回退为本地模板报告。")
+            st.warning("LLM 报告生成失败，已自动回退为本地模板报告。")
             st.code(llm_error)
         if show_prompt:
-            with st.expander("发送给大模型的提示词", expanded=False):
-                st.text_area("提示词", value=prompt, height=260)
+            with st.expander("发送给 LLM 的 Prompt", expanded=False):
+                st.text_area("Prompt", value=prompt, height=260)
                 st.download_button(
-                    "下载提示词",
+                    "下载 Prompt",
                     data=prompt.encode("utf-8"),
-                    file_name="大模型提示词.txt",
+                    file_name="llm_prompt.txt",
                     mime="text/plain",
                 )
         st.markdown(report)

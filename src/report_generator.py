@@ -74,7 +74,7 @@ def build_model_summary(report_input: ReportInput) -> str:
     if report_input.knowledge_context:
         lines.extend(
             [
-                "业务知识库参考：",
+                "RAG 知识库参考：",
                 report_input.knowledge_context,
             ]
         )
@@ -91,8 +91,8 @@ def generate_template_report(report_input: ReportInput) -> str:
     knowledge_section = ""
     if report_input.knowledge_context:
         knowledge_section = f"""
-## 6. 业务知识参考
-本次报告已引入业务知识库内容，相关解释应优先结合以下规则或背景理解：
+## 6. RAG 知识参考
+本次报告已引入 RAG 知识库内容，相关解释应优先结合以下规则或背景理解：
 
 {report_input.knowledge_context}
 """
@@ -133,7 +133,7 @@ def build_llm_prompt(report_input: ReportInput) -> str:
 3. 必须引用输入摘要中的关键指标，例如最佳模型、MAE、RMSE、MAPE、预测均值和异常点数量。
 4. 不要编造输入摘要中没有出现的具体数字、事件、业务背景或外部原因。
 5. 如果某些模型被跳过或没有出现在模型对比中，不要假设它们的结果。
-6. 如果输入摘要包含业务知识库参考，必须优先基于该知识库解释指标口径、异常原因和业务建议。
+6. 如果输入摘要包含 RAG 知识库参考，必须优先基于该知识库解释指标口径、异常原因和业务建议。
 7. 语气专业、简洁，适合作为项目演示中的自动报告。
 
 输入摘要：
