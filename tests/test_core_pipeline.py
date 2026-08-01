@@ -8,6 +8,7 @@ from src.diagnostics import fitted_diagnostics_frame, residual_summary_frame
 from src.experiment_tracking import build_experiment_record, experiments_frame
 from src.exporters import dataframe_to_csv_bytes, markdown_to_docx_bytes, markdown_to_pdf_bytes
 from src.forecasting import choose_best_model, run_selected_models_with_errors
+from src.history_store import validate_supabase_project_url
 from src.metrics import regression_metrics
 from src.rag import retrieve_relevant_context, split_knowledge_text
 from src.report_generator import ReportInput, generate_template_report
@@ -152,3 +153,10 @@ def test_cloud_environment_disables_private_settings(monkeypatch):
     assert can_persist_local_private_settings() is False
     with pytest.raises(RuntimeError):
         save_local_private_settings({"llm": {"api_key": "secret"}})
+
+
+def test_supabase_dashboard_url_is_rejected():
+    with pytest.raises(ValueError):
+        validate_supabase_project_url("https://supabase.com/dashboard/project/demo")
+
+    assert validate_supabase_project_url("https://demo.supabase.co/") == "https://demo.supabase.co"
