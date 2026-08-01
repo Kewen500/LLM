@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import os
+import platform
 from pathlib import Path
 
 import numpy as np
@@ -313,6 +314,9 @@ def arima_forecast(train, test, date_col, target_col, horizon, freq) -> Forecast
 
 
 def prophet_forecast(train, test, date_col, target_col, horizon, freq) -> ForecastResult:
+    if platform.system() == "Windows":
+        return prophet_like_decomposition_forecast(train, test, date_col, target_col, horizon, freq)
+
     matplotlib_dir = Path.cwd() / ".matplotlib"
     matplotlib_dir.mkdir(exist_ok=True)
     os.environ.setdefault("MPLCONFIGDIR", str(matplotlib_dir))
@@ -372,6 +376,7 @@ def run_selected_models_with_errors(
         "Seasonal Naive": seasonal_naive_forecast,
         "Linear Trend": linear_trend_forecast,
         "ARIMA": arima_forecast,
+        "Prophet-like Decomposition": prophet_like_decomposition_forecast,
         "Prophet": prophet_forecast,
         "LSTM": lstm_forecast,
     }

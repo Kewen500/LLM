@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import time
 import importlib.util
+import platform
 from pathlib import Path
 
 import pandas as pd
@@ -28,7 +29,15 @@ from src.report_generator import ReportInput, build_llm_prompt, generate_templat
 
 st.set_page_config(page_title="时间序列预测与 LLM 报告生成", layout="wide")
 
-FORECAST_MODEL_OPTIONS = ["Moving Average", "Seasonal Naive", "Linear Trend", "ARIMA", "Prophet", "LSTM"]
+FORECAST_MODEL_OPTIONS = [
+    "Moving Average",
+    "Seasonal Naive",
+    "Linear Trend",
+    "ARIMA",
+    "Prophet-like Decomposition",
+    "Prophet",
+    "LSTM",
+]
 MODEL_DEPENDENCIES = {
     "ARIMA": ("statsmodels", "statsmodels"),
     "Prophet": ("prophet", "prophet"),
@@ -212,6 +221,8 @@ def build_knowledge_context(use_local_knowledge: bool, knowledge_files, manual_k
 
 
 def is_model_available(model_name: str) -> bool:
+    if model_name == "Prophet":
+        return platform.system() != "Windows" and importlib.util.find_spec("prophet") is not None
     dependency = MODEL_DEPENDENCIES.get(model_name)
     if dependency is None:
         return True
