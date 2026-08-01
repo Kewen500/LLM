@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import pandas as pd
+import pytest
 
 from src.data_preprocess import prepare_time_series, split_train_test
 from src.diagnostics import fitted_diagnostics_frame, residual_summary_frame
@@ -11,6 +12,7 @@ from src.metrics import regression_metrics
 from src.rag import retrieve_relevant_context, split_knowledge_text
 from src.report_generator import ReportInput, generate_template_report
 from src.report_quality import evaluate_report_quality, quality_score
+from src.local_private_settings import can_persist_local_private_settings, save_local_private_settings
 
 
 def test_prepare_time_series_sorts_groups_and_interpolates():
@@ -142,3 +144,11 @@ def test_experiment_tracking_and_diagnostics_frames():
     assert summary["metric"].tolist() == ["mean", "std", "min", "median", "max"]
     assert frame.iloc[0]["best_model"] == "Moving Average"
     assert "window" in frame.iloc[0]["model_options"]
+
+
+def test_cloud_environment_disables_private_settings(monkeypatch):
+    monkeypatch.setenv("APP_ENV", "cloud")
+
+    assert can_persist_local_private_settings() is False
+    with pytest.raises(RuntimeError):
+        save_local_private_settings({"llm": {"api_key": "secret"}})

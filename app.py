@@ -16,7 +16,11 @@ from src.experiment_tracking import build_experiment_record, experiments_frame
 from src.exporters import dataframe_to_csv_bytes, markdown_to_docx_bytes, markdown_to_pdf_bytes
 from src.forecasting import MODEL_DISPLAY_NAMES, choose_best_model, display_model_name, run_selected_models_with_errors
 from src.history_store import save_analysis_run
-from src.local_private_settings import load_local_private_settings, update_local_private_section
+from src.local_private_settings import (
+    can_persist_local_private_settings,
+    load_local_private_settings,
+    update_local_private_section,
+)
 from src.llm_client import generate_openai_compatible_report
 from src.llm_presets import (
     CUSTOM_MODEL_LABEL,
@@ -141,6 +145,15 @@ def save_local_section(section: str, values: dict) -> None:
     st.session_state["local_private_settings"] = update_local_private_section(section, values)
 
 
+def render_private_storage_notice() -> bool:
+    can_save = can_persist_local_private_settings()
+    if can_save:
+        st.caption("本机保存会写入 data/local_private_settings.json；该文件已加入 .gitignore，不会上传 GitHub。")
+    else:
+        st.caption("公开部署环境已禁用本机保存；本次输入只在当前会话中临时使用，不会写入服务器文件。")
+    return can_save
+
+
 def render_llm_api_settings(default_max_tokens: int):
     presets = available_llm_presets()
     private_llm = local_private_settings().get("llm", {})
@@ -188,8 +201,8 @@ def render_llm_api_settings(default_max_tokens: int):
     saved_max_tokens = min(3000, max(600, saved_max_tokens))
     max_tokens = st.slider("报告最大输出长度（token）", min_value=600, max_value=3000, value=saved_max_tokens, step=200)
     show_prompt = st.checkbox("显示发送给 LLM 的 Prompt", value=False)
-    st.caption("本机保存会写入 data/local_private_settings.json；该文件已加入 .gitignore，不会上传 GitHub。")
-    if st.button("保存 LLM API 设置到本机"):
+    can_save_private = render_private_storage_notice()
+    if can_save_private and st.button("保存 LLM API 设置到本机"):
         save_local_section(
             "llm",
             {
@@ -238,8 +251,8 @@ def render_history_settings():
         supabase_key = st.text_input("Supabase anon key", value=private_supabase.get("anon_key", ""), type="password")
         table_name = st.text_input("表名", value=private_supabase.get("table", "analysis_runs"))
         st.caption("先在 Supabase SQL Editor 执行项目里的 supabase-schema.sql。不要在公开仓库中保存 API Key。")
-        st.caption("本机保存会写入 data/local_private_settings.json；该文件已加入 .gitignore，不会上传 GitHub。")
-        if st.button("保存 Supabase 设置到本机"):
+        can_save_private = render_private_storage_notice()
+        if can_save_private and st.button("保存 Supabase 设置到本机"):
             save_local_section(
                 "supabase",
                 {

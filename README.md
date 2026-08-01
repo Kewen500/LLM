@@ -99,6 +99,8 @@ data/local_private_settings.json
 
 这个文件已经写入 `.gitignore`，不会上传到 GitHub。注意：该文件是本机明文保存，适合个人电脑免重复输入；公开部署给他人使用时，不建议保存访客的 API Key。
 
+项目会自动识别常见公开部署环境，例如 Streamlit Community Cloud 和 Render。在公开部署环境中，页面不会读取或写入 `data/local_private_settings.json`，也不会显示保存按钮；访客输入的 API Key 只在当前会话临时使用。
+
 ## RAG 知识库放置位置
 
 RAG 解释文档统一放在项目根目录的 `knowledge/` 文件夹中：
