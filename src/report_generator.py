@@ -15,6 +15,7 @@ class ReportInput:
     anomalies: pd.DataFrame
     best_result: ForecastResult
     all_results: dict[str, ForecastResult]
+    knowledge_context: str = ""
 
 
 def recent_change_percent(data: pd.DataFrame, target_col: str) -> float:
@@ -54,24 +55,30 @@ def build_model_summary(report_input: ReportInput) -> str:
         for name, res in report_input.all_results.items()
     ]
     future = report_input.best_result.future["prediction"]
-    return "\n".join(
-        [
-            f"分析字段：{report_input.target_col}",
-            f"数据范围：{first_date} 至 {last_date}",
-            f"样本量：{len(data)}",
-            f"最近 14 个周期相对前一阶段变化：{change:.2f}%",
-            f"近期趋势判断：{trend_label(change)}",
-            f"异常点数量：{len(report_input.anomalies)}",
-            f"异常点摘要：{anomaly_summary(report_input)}",
-            f"最佳模型：{display_model_name(report_input.best_result.name)}",
-            f"最佳模型指标：MAE={metrics['MAE']}，RMSE={metrics['RMSE']}，MAPE={metrics['MAPE']}%",
-            f"未来预测均值：{future.mean():.2f}",
-            f"未来预测最小值：{future.min():.2f}",
-            f"未来预测最大值：{future.max():.2f}",
-            "模型对比：",
-            *model_lines,
-        ]
-    )
+    lines = [
+        f"分析字段：{report_input.target_col}",
+        f"数据范围：{first_date} 至 {last_date}",
+        f"样本量：{len(data)}",
+        f"最近 14 个周期相对前一阶段变化：{change:.2f}%",
+        f"近期趋势判断：{trend_label(change)}",
+        f"异常点数量：{len(report_input.anomalies)}",
+        f"异常点摘要：{anomaly_summary(report_input)}",
+        f"最佳模型：{display_model_name(report_input.best_result.name)}",
+        f"最佳模型指标：MAE={metrics['MAE']}，RMSE={metrics['RMSE']}，MAPE={metrics['MAPE']}%",
+        f"未来预测均值：{future.mean():.2f}",
+        f"未来预测最小值：{future.min():.2f}",
+        f"未来预测最大值：{future.max():.2f}",
+        "模型对比：",
+        *model_lines,
+    ]
+    if report_input.knowledge_context:
+        lines.extend(
+            [
+                "业务知识库参考：",
+                report_input.knowledge_context,
+            ]
+        )
+    return "\n".join(lines)
 
 
 def generate_template_report(report_input: ReportInput) -> str:
@@ -81,6 +88,14 @@ def generate_template_report(report_input: ReportInput) -> str:
     data = report_input.prepared_data
     change = recent_change_percent(data, report_input.target_col)
     direction = trend_label(change)
+    knowledge_section = ""
+    if report_input.knowledge_context:
+        knowledge_section = f"""
+## 6. 业务知识参考
+本次报告已引入业务知识库内容，相关解释应优先结合以下规则或背景理解：
+
+{report_input.knowledge_context}
+"""
 
     return f"""# 时间序列自动分析报告
 
@@ -98,6 +113,7 @@ def generate_template_report(report_input: ReportInput) -> str:
 
 ## 5. 建议
 建议优先使用当前最佳模型作为基线模型，并持续记录预测误差。当 MAPE 连续升高时，应重新训练模型或加入节假日、价格、活动、天气等外生变量。对于异常点较多的时间段，建议先做数据质量核查，再进行业务归因。
+{knowledge_section}
 
 ---
 
@@ -117,7 +133,8 @@ def build_llm_prompt(report_input: ReportInput) -> str:
 3. 必须引用输入摘要中的关键指标，例如最佳模型、MAE、RMSE、MAPE、预测均值和异常点数量。
 4. 不要编造输入摘要中没有出现的具体数字、事件、业务背景或外部原因。
 5. 如果某些模型被跳过或没有出现在模型对比中，不要假设它们的结果。
-6. 语气专业、简洁，适合作为项目演示中的自动报告。
+6. 如果输入摘要包含业务知识库参考，必须优先基于该知识库解释指标口径、异常原因和业务建议。
+7. 语气专业、简洁，适合作为项目演示中的自动报告。
 
 输入摘要：
 {summary}

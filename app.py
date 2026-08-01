@@ -11,6 +11,7 @@ from src.anomaly_detection import detect_anomalies
 from src.data_preprocess import prepare_time_series, split_train_test
 from src.exporters import dataframe_to_csv_bytes, markdown_to_docx_bytes, markdown_to_pdf_bytes
 from src.forecasting import MODEL_DISPLAY_NAMES, choose_best_model, display_model_name, run_selected_models_with_errors
+from src.history_store import save_analysis_run
 from src.llm_client import generate_openai_compatible_report
 from src.llm_presets import (
     CUSTOM_MODEL_LABEL,
@@ -20,12 +21,15 @@ from src.llm_presets import (
     save_custom_llm_preset,
 )
 from src.metrics import metrics_frame
+from src.rag import read_knowledge_file, retrieve_relevant_context, split_knowledge_text
+from src.report_quality import evaluate_report_quality, quality_checks_frame, quality_score
 from src.report_generator import ReportInput, build_llm_prompt, generate_template_report
 
 
 st.set_page_config(page_title="时间序列预测与大模型报告生成", layout="wide")
 
 FORECAST_MODEL_OPTIONS = ["Moving Average", "Seasonal Naive", "Linear Trend", "ARIMA", "Prophet", "LSTM"]
+KNOWLEDGE_DIR = Path(__file__).parent / "knowledge"
 
 
 def load_default_data() -> pd.DataFrame:
@@ -146,6 +150,62 @@ def render_llm_api_settings(default_max_tokens: int):
     return api_url, model_name, api_key, max_tokens, show_prompt
 
 
+def render_knowledge_settings():
+    with st.expander("业务知识库（RAG，可选）", expanded=False):
+        st.caption("项目会自动读取 knowledge/ 目录中的 .md、.txt、.csv 文件；也可以临时上传或粘贴知识。")
+        use_local_knowledge = st.checkbox("使用项目内置知识库", value=True)
+        if KNOWLEDGE_DIR.exists():
+            local_files = sorted(path.name for path in KNOWLEDGE_DIR.iterdir() if path.suffix.lower() in {".md", ".txt", ".csv"})
+            if local_files:
+                st.caption("已发现：" + "、".join(local_files))
+        knowledge_files = st.file_uploader(
+            "上传业务知识文件",
+            type=["txt", "md", "csv"],
+            accept_multiple_files=True,
+        )
+        manual_knowledge = st.text_area(
+            "粘贴业务知识",
+            value="",
+            height=120,
+            placeholder="例如：HUFL 表示高压负载特征，节假日前后可能出现波动；异常点需要结合检修记录判断。",
+        )
+    return use_local_knowledge, knowledge_files, manual_knowledge
+
+
+def render_history_settings():
+    with st.expander("历史记录保存（Supabase，可选）", expanded=False):
+        enabled = st.checkbox("保存本次分析到 Supabase", value=False)
+        supabase_url = st.text_input("Supabase Project URL", value="", placeholder="https://xxxx.supabase.co")
+        supabase_key = st.text_input("Supabase anon key", value="", type="password")
+        table_name = st.text_input("表名", value="analysis_runs")
+        st.caption("先在 Supabase SQL Editor 执行项目里的 supabase-schema.sql。不要在公开仓库中保存 API Key。")
+    return enabled, supabase_url, supabase_key, table_name
+
+
+def load_local_knowledge_chunks():
+    chunks = []
+    if not KNOWLEDGE_DIR.exists():
+        return chunks
+    for path in sorted(KNOWLEDGE_DIR.iterdir()):
+        if path.suffix.lower() not in {".md", ".txt", ".csv"}:
+            continue
+        text = read_knowledge_file(path.name, path.read_bytes())
+        chunks.extend(split_knowledge_text(path.name, text))
+    return chunks
+
+
+def build_knowledge_context(use_local_knowledge: bool, knowledge_files, manual_knowledge: str, target_col: str) -> str:
+    chunks = []
+    if use_local_knowledge:
+        chunks.extend(load_local_knowledge_chunks())
+    for uploaded in knowledge_files or []:
+        text = read_knowledge_file(uploaded.name, uploaded.getvalue())
+        chunks.extend(split_knowledge_text(uploaded.name, text))
+    if manual_knowledge.strip():
+        chunks.extend(split_knowledge_text("手动输入", manual_knowledge))
+    return retrieve_relevant_context(chunks, target_col=target_col, extra_terms=manual_knowledge)
+
+
 def default_selected_models() -> list[str]:
     defaults = ["Moving Average", "Seasonal Naive", "Linear Trend"]
     if importlib.util.find_spec("statsmodels"):
@@ -184,6 +244,8 @@ with st.sidebar:
     show_prompt = False
     if report_mode == "大模型 API":
         api_url, model_name, api_key, max_tokens, show_prompt = render_llm_api_settings(max_tokens)
+    use_local_knowledge, knowledge_files, manual_knowledge = render_knowledge_settings()
+    save_history, supabase_url, supabase_key, history_table = render_history_settings()
     run_button = st.button("开始分析", type="primary")
 
 st.subheader("原始数据预览")
@@ -213,6 +275,7 @@ if run_button or uploaded_file is None:
         results = model_run.results
         best = choose_best_model(results)
         anomalies = detect_anomalies(prepared.data, prepared.date_col, prepared.target_col)
+        knowledge_context = build_knowledge_context(use_local_knowledge, knowledge_files, manual_knowledge, prepared.target_col)
         report_input = ReportInput(
             date_col=prepared.date_col,
             target_col=prepared.target_col,
@@ -220,6 +283,7 @@ if run_button or uploaded_file is None:
             anomalies=anomalies,
             best_result=best,
             all_results=results,
+            knowledge_context=knowledge_context,
         )
         prompt = build_llm_prompt(report_input)
         template_report = generate_template_report(report_input)
@@ -238,6 +302,9 @@ if run_button or uploaded_file is None:
                 report_source = f"大模型生成报告：{model_name}"
             except Exception as exc:
                 llm_error = str(exc)
+        quality_checks = evaluate_report_quality(report, report_input)
+        quality_table = quality_checks_frame(quality_checks)
+        quality_pass_rate = quality_score(quality_checks)
 
         elapsed_seconds = time.perf_counter() - run_started_at
 
@@ -268,6 +335,9 @@ if run_button or uploaded_file is None:
 
         st.subheader("自动分析报告")
         st.caption(report_source)
+        if knowledge_context:
+            with st.expander("本次检索到的业务知识", expanded=False):
+                st.text(knowledge_context)
         if llm_error:
             st.warning("大模型报告生成失败，已自动回退为本地模板报告。")
             st.code(llm_error)
@@ -281,6 +351,46 @@ if run_button or uploaded_file is None:
                     mime="text/plain",
                 )
         st.markdown(report)
+
+        st.subheader("报告事实一致性校验")
+        score_cols = st.columns(2)
+        score_cols[0].metric("校验通过率", f"{quality_pass_rate}%")
+        score_cols[1].metric("检查项数量", len(quality_checks))
+        st.dataframe(quality_table, width="stretch")
+
+        history_saved = None
+        history_error = None
+        if save_history:
+            try:
+                history_saved = save_analysis_run(
+                    supabase_url=supabase_url,
+                    supabase_key=supabase_key,
+                    table=history_table,
+                    payload={
+                        "dataset_name": uploaded_file.name if uploaded_file else "sample_sales.csv",
+                        "target_col": prepared.target_col,
+                        "horizon": horizon,
+                        "test_size": test_size,
+                        "best_model": display_model_name(best.name),
+                        "best_metrics": best.metrics,
+                        "model_metrics": localize_metrics_table(
+                            metrics_frame({name: result.metrics for name, result in results.items()})
+                        ).to_dict(orient="records"),
+                        "anomalies": localize_anomaly_table(anomalies, prepared.date_col, prepared.target_col).to_dict(orient="records"),
+                        "report_quality": quality_table.to_dict(orient="records"),
+                        "knowledge_context": knowledge_context,
+                        "report": report,
+                    },
+                )
+            except Exception as exc:
+                history_error = str(exc)
+        if history_saved:
+            st.success("本次分析已保存到 Supabase。")
+            st.json(history_saved)
+        if history_error:
+            st.warning("Supabase 历史记录保存失败。")
+            st.code(history_error)
+
         st.download_button(
             "下载分析报告",
             data=report.encode("utf-8"),

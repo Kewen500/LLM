@@ -14,6 +14,8 @@
 - MAE、RMSE、MAPE 指标评估
 - 滚动窗口异常点检测
 - 本地模板报告或 OpenAI 兼容大模型 API 报告生成，API 失败时自动回退本地报告
+- 轻量 RAG 业务知识库：自动读取 `knowledge/` 目录，并支持页面上传或粘贴业务知识
+- 报告事实一致性校验：检查报告是否引用真实模型、指标、预测均值和异常点数量
 - 内置大模型 API 预设：DeepSeek、Kimi 国内、Kimi 国际、OpenAI、阿里云百炼 / Qwen
 - 支持自定义 OpenAI 兼容 API URL 和模型名称，并可保存为本地预设
 - 分析运行耗时展示
@@ -31,6 +33,8 @@ time-series-llm-report/
 ├── requirements-advanced.txt
 ├── data/
 │   └── sample_sales.csv
+├── knowledge/
+│   └── ETT数据集业务说明.md
 ├── src/
 │   ├── anomaly_detection.py
 │   ├── data_preprocess.py
@@ -79,6 +83,28 @@ streamlit run app.py
 如果没有 API key，可以选择“本地模板报告”。如果有 OpenAI 兼容接口，在侧边栏选择“大模型 API”，再从“API 服务商”中选择 DeepSeek、Kimi、OpenAI、Qwen 等预设。系统会自动带出 API URL 和常用模型名称，也可以选择“自定义”手动填写 API URL 和模型名称，并保存为本地预设。`API URL` 可以填写完整的 `/chat/completions` 地址，也可以只填写到服务商的 OpenAI 兼容 base URL。系统只保存 URL 和模型名称，不保存 API Key。
 
 大模型报告生成失败时，系统会自动回退为本地模板报告，并在页面显示错误原因和发送给大模型的 Prompt，便于调试。
+
+## 业务知识库放置位置
+
+RAG 解释文档统一放在项目根目录的 `knowledge/` 文件夹中：
+
+```text
+knowledge/
+└── ETT数据集业务说明.md
+```
+
+支持 `.md`、`.txt`、`.csv` 文件。文档中可以写字段含义、指标口径、异常原因、业务规则和报告写作口径。系统会自动读取 `knowledge/` 目录，也可以在页面的“业务知识库（RAG，可选）”区域临时上传文件或粘贴文本。
+
+示例：
+
+```md
+# 字段说明
+HUFL：高压有用负载特征。
+OT：油温。
+
+# 分析规则
+如果负载和油温同时异常，需要优先关注设备温度和检修记录。
+```
 
 ## 部署
 
