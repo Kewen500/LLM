@@ -62,6 +62,8 @@ pip install -r requirements.txt
 pip install -r requirements-advanced.txt
 ```
 
+说明：公开部署默认使用轻量依赖，页面会自动隐藏当前环境未安装的高级模型。`Prophet` 需要安装 `prophet`，`LSTM` 需要安装 `torch`；如果希望本地运行完整模型，请使用上面的 `requirements-advanced.txt`。
+
 命令行验证核心流程：
 
 ```bash
@@ -109,6 +111,8 @@ OT：油温。
 ## 部署
 
 这个项目是 Streamlit 应用，需要部署到支持常驻 Python Web 服务的平台。推荐两种方式：
+
+默认部署使用 `requirements-deploy.txt`，用于保证免费环境启动稳定。这个轻量版本会保留 Moving Average、Seasonal Naive、Linear Trend、ARIMA、LLM API、RAG、导出和历史记录等核心功能；如果部署环境资源充足，可以把 `prophet` 和 `torch` 加入部署依赖来启用 Prophet 与 LSTM。
 
 ### 方式一：Render
 

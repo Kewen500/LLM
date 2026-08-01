@@ -29,6 +29,11 @@ from src.report_generator import ReportInput, build_llm_prompt, generate_templat
 st.set_page_config(page_title="时间序列预测与 LLM 报告生成", layout="wide")
 
 FORECAST_MODEL_OPTIONS = ["Moving Average", "Seasonal Naive", "Linear Trend", "ARIMA", "Prophet", "LSTM"]
+MODEL_DEPENDENCIES = {
+    "ARIMA": ("statsmodels", "statsmodels"),
+    "Prophet": ("prophet", "prophet"),
+    "LSTM": ("torch", "torch"),
+}
 KNOWLEDGE_DIR = Path(__file__).parent / "knowledge"
 
 
@@ -206,15 +211,38 @@ def build_knowledge_context(use_local_knowledge: bool, knowledge_files, manual_k
     return retrieve_relevant_context(chunks, target_col=target_col, extra_terms=manual_knowledge)
 
 
+def is_model_available(model_name: str) -> bool:
+    dependency = MODEL_DEPENDENCIES.get(model_name)
+    if dependency is None:
+        return True
+    package_name, _ = dependency
+    return importlib.util.find_spec(package_name) is not None
+
+
+def available_forecast_models() -> list[str]:
+    return [model for model in FORECAST_MODEL_OPTIONS if is_model_available(model)]
+
+
+def unavailable_forecast_models() -> list[str]:
+    return [model for model in FORECAST_MODEL_OPTIONS if not is_model_available(model)]
+
+
 def default_selected_models() -> list[str]:
-    defaults = ["Moving Average", "Seasonal Naive", "Linear Trend"]
-    if importlib.util.find_spec("statsmodels"):
-        defaults.append("ARIMA")
-    if importlib.util.find_spec("prophet"):
-        defaults.append("Prophet")
-    if importlib.util.find_spec("torch"):
-        defaults.append("LSTM")
-    return defaults
+    return available_forecast_models()
+
+
+def render_model_dependency_notice(missing_models: list[str]) -> None:
+    if not missing_models:
+        return
+    details = []
+    for model in missing_models:
+        _, pip_name = MODEL_DEPENDENCIES[model]
+        details.append(f"{model} 需要 `{pip_name}`")
+    st.info(
+        "当前环境未安装部分高级模型依赖，已自动隐藏："
+        + "；".join(details)
+        + "。本地完整安装可执行：`pip install -r requirements-advanced.txt`。"
+    )
 
 
 st.title("时间序列预测与 LLM 自动分析报告生成系统")
@@ -230,9 +258,11 @@ with st.sidebar:
     target_col = st.selectbox("目标值列", raw.columns, index=default_target_index)
     horizon = st.slider("预测周期", min_value=7, max_value=90, value=30, step=7)
     test_size = st.slider("测试集长度", min_value=7, max_value=60, value=14, step=7)
+    available_models = available_forecast_models()
+    render_model_dependency_notice(unavailable_forecast_models())
     selected_models = st.multiselect(
         "选择模型",
-        FORECAST_MODEL_OPTIONS,
+        available_models,
         default=default_selected_models(),
         format_func=display_model_name,
     )
