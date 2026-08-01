@@ -3,6 +3,7 @@ from __future__ import annotations
 import time
 import importlib.util
 import platform
+import re
 from pathlib import Path
 
 import pandas as pd
@@ -10,6 +11,8 @@ import streamlit as st
 
 from src.anomaly_detection import detect_anomalies
 from src.data_preprocess import prepare_time_series, split_train_test
+from src.diagnostics import fitted_diagnostics_frame, future_forecast_frame, residual_summary_frame
+from src.experiment_tracking import build_experiment_record, experiments_frame
 from src.exporters import dataframe_to_csv_bytes, markdown_to_docx_bytes, markdown_to_pdf_bytes
 from src.forecasting import MODEL_DISPLAY_NAMES, choose_best_model, display_model_name, run_selected_models_with_errors
 from src.history_store import save_analysis_run
@@ -256,6 +259,107 @@ def render_model_dependency_notice(missing_models: list[str]) -> None:
     )
 
 
+def render_model_options(selected_models: list[str]) -> dict:
+    options = {}
+    with st.expander("Model 参数配置", expanded=False):
+        st.caption("参数只会传给本次选中的模型；批量实验会复用同一组参数。")
+        if "Moving Average" in selected_models:
+            options["Moving Average"] = {
+                "window": st.slider("Moving Average window", min_value=2, max_value=60, value=7, step=1)
+            }
+        if "Seasonal Naive" in selected_models:
+            options["Seasonal Naive"] = {
+                "season_length": st.slider("Seasonal Naive season_length", min_value=2, max_value=60, value=7, step=1)
+            }
+        if "ARIMA" in selected_models:
+            c1, c2, c3 = st.columns(3)
+            options["ARIMA"] = {
+                "p": c1.number_input("ARIMA p", min_value=0, max_value=5, value=2, step=1),
+                "d": c2.number_input("ARIMA d", min_value=0, max_value=2, value=1, step=1),
+                "q": c3.number_input("ARIMA q", min_value=0, max_value=5, value=2, step=1),
+            }
+        if "LSTM" in selected_models:
+            c1, c2, c3 = st.columns(3)
+            options["LSTM"] = {
+                "lookback": c1.slider("LSTM lookback", min_value=3, max_value=60, value=14, step=1),
+                "epochs": c2.slider("LSTM epochs", min_value=10, max_value=200, value=80, step=10),
+                "hidden_size": c3.slider("LSTM hidden_size", min_value=8, max_value=128, value=24, step=8),
+            }
+        if not options:
+            st.info("当前选中的模型没有可配置参数。")
+    return options
+
+
+def parse_int_list(raw_text: str, fallback: list[int]) -> list[int]:
+    values = []
+    for item in re.split(r"[,，\s]+", raw_text.strip()):
+        if not item:
+            continue
+        try:
+            value = int(item)
+        except ValueError:
+            continue
+        if value > 0:
+            values.append(value)
+    return values or fallback
+
+
+def append_experiment_record(record: dict) -> None:
+    if "experiment_records" not in st.session_state:
+        st.session_state["experiment_records"] = []
+    st.session_state["experiment_records"].append(record)
+
+
+def run_batch_experiments(
+    *,
+    raw: pd.DataFrame,
+    date_col: str,
+    target_col: str,
+    dataset_name: str,
+    horizons: list[int],
+    test_sizes: list[int],
+    selected_models: list[str],
+    model_options: dict,
+) -> tuple[pd.DataFrame, dict[str, str]]:
+    records = []
+    errors = {}
+    prepared = prepare_time_series(raw, date_col, target_col)
+    for batch_horizon in horizons:
+        for batch_test_size in test_sizes:
+            started_at = time.perf_counter()
+            try:
+                train, test = split_train_test(prepared.data, target_col, test_size=batch_test_size)
+                model_run = run_selected_models_with_errors(
+                    train=train,
+                    test=test,
+                    date_col=prepared.date_col,
+                    target_col=prepared.target_col,
+                    horizon=batch_horizon,
+                    freq=prepared.frequency,
+                    selected=selected_models,
+                    model_options=model_options,
+                )
+                best = choose_best_model(model_run.results)
+                records.append(
+                    build_experiment_record(
+                        dataset_name=dataset_name,
+                        target_col=prepared.target_col,
+                        horizon=batch_horizon,
+                        test_size=batch_test_size,
+                        selected_models=selected_models,
+                        best_result=best,
+                        elapsed_seconds=time.perf_counter() - started_at,
+                        row_count=len(prepared.data),
+                        model_options=model_options,
+                        run_type="batch",
+                    )
+                )
+                errors.update({f"h={batch_horizon}, test={batch_test_size}, {name}": msg for name, msg in model_run.errors.items()})
+            except Exception as exc:
+                errors[f"h={batch_horizon}, test={batch_test_size}"] = str(exc)
+    return experiments_frame(records), errors
+
+
 st.title("时间序列预测与 LLM 自动分析报告生成系统")
 
 with st.sidebar:
@@ -277,6 +381,11 @@ with st.sidebar:
         default=default_selected_models(),
         format_func=display_model_name,
     )
+    model_options = render_model_options(selected_models)
+    with st.expander("批量实验", expanded=False):
+        batch_horizons_text = st.text_input("预测周期组合", value=str(horizon))
+        batch_test_sizes_text = st.text_input("测试集长度组合", value=str(test_size))
+        run_batch_button = st.button("运行批量实验")
     report_mode = st.radio("报告生成方式", ["本地模板报告", "LLM API"], horizontal=True)
     api_url = "https://api.deepseek.com"
     model_name = "deepseek-v4-flash"
@@ -299,6 +408,32 @@ with st.expander("查看字段解析结果", expanded=False):
     st.dataframe(profile_dataframe(raw), width="stretch")
 st.dataframe(raw.head(20), width="stretch")
 
+dataset_name = uploaded_file.name if uploaded_file else "sample_sales.csv"
+
+if run_batch_button:
+    if not selected_models:
+        st.warning("请至少选择一个模型后再运行批量实验。")
+    else:
+        batch_horizons = parse_int_list(batch_horizons_text, [horizon])
+        batch_test_sizes = parse_int_list(batch_test_sizes_text, [test_size])
+        batch_frame, batch_errors = run_batch_experiments(
+            raw=raw,
+            date_col=date_col,
+            target_col=target_col,
+            dataset_name=dataset_name,
+            horizons=batch_horizons,
+            test_sizes=batch_test_sizes,
+            selected_models=selected_models,
+            model_options=model_options,
+        )
+        for record in batch_frame.to_dict(orient="records"):
+            append_experiment_record(record)
+        st.success(f"批量实验完成：{len(batch_frame)} 条记录。")
+        st.dataframe(batch_frame, width="stretch")
+        if batch_errors:
+            with st.expander("批量实验错误详情", expanded=False):
+                st.json(batch_errors)
+
 if run_button or uploaded_file is None:
     try:
         run_started_at = time.perf_counter()
@@ -312,6 +447,7 @@ if run_button or uploaded_file is None:
             horizon=horizon,
             freq=prepared.frequency,
             selected=selected_models,
+            model_options=model_options,
         )
         results = model_run.results
         best = choose_best_model(results)
@@ -348,6 +484,21 @@ if run_button or uploaded_file is None:
         quality_pass_rate = quality_score(quality_checks)
 
         elapsed_seconds = time.perf_counter() - run_started_at
+        if run_button:
+            append_experiment_record(
+                build_experiment_record(
+                    dataset_name=dataset_name,
+                    target_col=prepared.target_col,
+                    horizon=horizon,
+                    test_size=test_size,
+                    selected_models=selected_models,
+                    best_result=best,
+                    elapsed_seconds=elapsed_seconds,
+                    row_count=len(prepared.data),
+                    model_options=model_options,
+                    run_type="single",
+                )
+            )
 
         c1, c2, c3, c4, c5 = st.columns(5)
         c1.metric("最佳模型", display_model_name(best.name))
@@ -398,6 +549,48 @@ if run_button or uploaded_file is None:
         score_cols[0].metric("校验通过率", f"{quality_pass_rate}%")
         score_cols[1].metric("检查项数量", len(quality_checks))
         st.dataframe(quality_table, width="stretch")
+
+        diagnostic_tab, experiment_tab = st.tabs(["可视化诊断", "实验记录"])
+        with diagnostic_tab:
+            diagnostic_model = st.selectbox(
+                "诊断模型",
+                list(results.keys()),
+                index=list(results.keys()).index(best.name) if best.name in results else 0,
+                format_func=display_model_name,
+            )
+            diagnostic_result = results[diagnostic_model]
+            diagnostic_frame = fitted_diagnostics_frame(diagnostic_result)
+            chart_frame = diagnostic_frame.rename(
+                columns={"actual": "Actual", "prediction": "Prediction", "residual": "Residual"}
+            ).set_index(prepared.date_col)
+            st.line_chart(chart_frame[["Actual", "Prediction"]], width="stretch")
+            st.line_chart(chart_frame[["Residual"]], width="stretch")
+            st.bar_chart(diagnostic_frame["absolute_error"], width="stretch")
+            d1, d2 = st.columns(2)
+            d1.dataframe(residual_summary_frame(diagnostic_result), width="stretch")
+            d2.dataframe(future_forecast_frame(diagnostic_result), width="stretch")
+            with st.expander("测试集诊断明细", expanded=False):
+                st.dataframe(diagnostic_frame, width="stretch")
+
+        with experiment_tab:
+            records = st.session_state.get("experiment_records", [])
+            record_frame = experiments_frame(records)
+            if record_frame.empty:
+                st.info("还没有实验记录。点击“开始分析”或“运行批量实验”后会自动记录。")
+            else:
+                st.dataframe(record_frame, width="stretch")
+                best_records = record_frame.sort_values("MAPE").head(10)
+                st.bar_chart(best_records.set_index("experiment_id")[["MAE", "RMSE", "MAPE"]], width="stretch")
+                c_exp1, c_exp2 = st.columns(2)
+                c_exp1.download_button(
+                    "下载实验记录 CSV",
+                    data=dataframe_to_csv_bytes(record_frame),
+                    file_name="experiment_records.csv",
+                    mime="text/csv",
+                )
+                if c_exp2.button("清空实验记录"):
+                    st.session_state["experiment_records"] = []
+                    st.rerun()
 
         history_saved = None
         history_error = None

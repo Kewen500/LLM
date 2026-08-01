@@ -291,16 +291,17 @@ def lstm_forecast(
     )
 
 
-def arima_forecast(train, test, date_col, target_col, horizon, freq) -> ForecastResult:
+def arima_forecast(train, test, date_col, target_col, horizon, freq, p=2, d=1, q=2) -> ForecastResult:
     try:
         from statsmodels.tsa.arima.model import ARIMA
     except ImportError as exc:
         raise RuntimeError("当前环境未安装 statsmodels，无法运行 ARIMA。请执行：pip install statsmodels") from exc
 
-    model = ARIMA(train[target_col].astype(float), order=(2, 1, 2)).fit()
+    order = (int(p), int(d), int(q))
+    model = ARIMA(train[target_col].astype(float), order=order).fit()
     test_pred = model.forecast(steps=len(test)).to_numpy()
     combined = pd.concat([train[target_col], test[target_col]], ignore_index=True).astype(float)
-    future_model = ARIMA(combined, order=(2, 1, 2)).fit()
+    future_model = ARIMA(combined, order=order).fit()
     future_values = future_model.forecast(steps=horizon).to_numpy()
     return _result(
         "ARIMA",

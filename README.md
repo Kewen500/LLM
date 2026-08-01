@@ -11,6 +11,9 @@
 - 传统时间序列模型：ARIMA、Prophet
 - 深度学习模型：基于 PyTorch 的 LSTM 滑动窗口预测
 - Prophet-like Decomposition：当 Windows 环境中的 Stan 优化器不可用时，自动切换到趋势 + 星期周期分解模型
+- Model 参数配置：支持 Moving Average window、Seasonal Naive season_length、ARIMA p/d/q、LSTM lookback/epochs/hidden_size
+- 批量实验记录：支持多组 horizon 与 test_size 组合实验，自动记录最佳模型、MAE、RMSE、MAPE、耗时和参数
+- 可视化诊断页：展示 Actual vs Prediction、Residual、绝对误差、残差统计和未来预测明细
 - MAE、RMSE、MAPE 指标评估
 - 滚动窗口异常点检测
 - 本地模板报告或 OpenAI-compatible LLM API 报告生成，API 失败时自动回退本地报告
@@ -155,8 +158,9 @@ date,sales
 6. 已完成：增加 DeepSeek、Kimi、OpenAI、Qwen 等 LLM API 预设，并支持自定义 API URL 和 Model Name。
 7. 已完成：增加 Markdown、DOCX、PDF 报告导出，以及预测结果、模型指标、异常点 CSV 导出。
 8. 已完成：增加自动化测试，覆盖数据清洗、基础模型运行和导出能力。
-9. 下一阶段：增加批量实验记录、模型参数配置和可视化诊断页。
+9. 已完成：增加批量实验记录、Model 参数配置和可视化诊断页。
+10. 下一阶段：增加用户登录、实验记录云端查询页和共享报告链接。
 
 ## 简历写法
 
-基于 Time Series Forecasting 与 LLM 构建自动化数据分析系统，支持 CSV 数据上传、数据清洗、趋势预测、异常检测、模型评估和自然语言分析报告生成。使用 Moving Average、Seasonal Naive、Linear Trend、ARIMA、Prophet 与 LSTM 等模型完成预测对比，采用 MAE、RMSE、MAPE 等指标评估模型表现，并接入 OpenAI-compatible LLM API，内置 DeepSeek、Kimi、OpenAI、Qwen 等服务商预设，根据结构化预测结果自动生成业务分析报告。项目支持 Markdown、DOCX、PDF 报告导出及预测结果、评估指标、异常点 CSV 下载，并通过 Pytest 覆盖核心数据处理、模型运行和导出流程。
+基于 Time Series Forecasting 与 LLM 构建自动化数据分析系统，支持 CSV 数据上传、数据清洗、趋势预测、异常检测、模型评估和自然语言分析报告生成。使用 Moving Average、Seasonal Naive、Linear Trend、ARIMA、Prophet-like Decomposition、Prophet 与 LSTM 等模型完成预测对比，采用 MAE、RMSE、MAPE 等指标评估模型表现，并支持 Model 参数配置、批量实验记录和残差可视化诊断。项目接入 OpenAI-compatible LLM API，内置 DeepSeek、Kimi、OpenAI、Qwen 等服务商预设，根据结构化预测结果自动生成业务分析报告，支持 Markdown、DOCX、PDF 报告导出及预测结果、评估指标、异常点 CSV 下载，并通过 Pytest 覆盖核心数据处理、模型运行、实验记录和导出流程。

@@ -3,6 +3,8 @@ from __future__ import annotations
 import pandas as pd
 
 from src.data_preprocess import prepare_time_series, split_train_test
+from src.diagnostics import fitted_diagnostics_frame, residual_summary_frame
+from src.experiment_tracking import build_experiment_record, experiments_frame
 from src.exporters import dataframe_to_csv_bytes, markdown_to_docx_bytes, markdown_to_pdf_bytes
 from src.forecasting import choose_best_model, run_selected_models_with_errors
 from src.metrics import regression_metrics
@@ -99,3 +101,44 @@ def test_rag_context_and_report_quality_checks():
 
     assert "HUFL 表示高压有用负载" in context
     assert quality_score(checks) >= 80
+
+
+def test_experiment_tracking_and_diagnostics_frames():
+    raw = pd.DataFrame(
+        {
+            "date": pd.date_range("2025-01-01", periods=40, freq="D"),
+            "sales": [100 + index * 2 for index in range(40)],
+        }
+    )
+    prepared = prepare_time_series(raw, "date", "sales")
+    train, test = split_train_test(prepared.data, "sales", test_size=7)
+    run = run_selected_models_with_errors(
+        train=train,
+        test=test,
+        date_col="date",
+        target_col="sales",
+        horizon=7,
+        freq=prepared.frequency,
+        selected=["Moving Average"],
+        model_options={"Moving Average": {"window": 3}},
+    )
+    best = choose_best_model(run.results)
+    diagnostics = fitted_diagnostics_frame(best)
+    summary = residual_summary_frame(best)
+    record = build_experiment_record(
+        dataset_name="sample.csv",
+        target_col="sales",
+        horizon=7,
+        test_size=7,
+        selected_models=["Moving Average"],
+        best_result=best,
+        elapsed_seconds=0.5,
+        row_count=len(prepared.data),
+        model_options={"Moving Average": {"window": 3}},
+    )
+    frame = experiments_frame([record])
+
+    assert {"residual", "absolute_error", "absolute_percentage_error"}.issubset(diagnostics.columns)
+    assert summary["metric"].tolist() == ["mean", "std", "min", "median", "max"]
+    assert frame.iloc[0]["best_model"] == "Moving Average"
+    assert "window" in frame.iloc[0]["model_options"]
