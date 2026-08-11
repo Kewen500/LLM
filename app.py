@@ -10,6 +10,7 @@ import pandas as pd
 import streamlit as st
 
 from src.anomaly_detection import detect_anomalies
+from src.backtesting import rolling_backtest, summarize_backtest
 from src.data_preprocess import prepare_time_series, split_train_test
 from src.diagnostics import fitted_diagnostics_frame, future_forecast_frame, residual_summary_frame
 from src.experiment_tracking import build_experiment_record, experiments_frame
@@ -18,6 +19,7 @@ from src.forecasting import MODEL_DISPLAY_NAMES, choose_best_model, display_mode
 from src.history_store import save_analysis_run
 from src.local_private_settings import (
     can_persist_local_private_settings,
+    is_cloud_deployment,
     load_local_private_settings,
     update_local_private_section,
 )
@@ -42,12 +44,14 @@ FORECAST_MODEL_OPTIONS = [
     "Seasonal Naive",
     "Linear Trend",
     "ARIMA",
+    "TimesFM",
     "Prophet-like Decomposition",
     "Prophet",
     "LSTM",
 ]
 MODEL_DEPENDENCIES = {
     "ARIMA": ("statsmodels", "statsmodels"),
+    "TimesFM": ("timesfm", "timesfm[torch]"),
     "Prophet": ("prophet", "prophet"),
     "LSTM": ("torch", "torch"),
 }
@@ -293,6 +297,8 @@ def build_knowledge_context(use_local_knowledge: bool, knowledge_files, manual_k
 def is_model_available(model_name: str) -> bool:
     if model_name == "Prophet":
         return platform.system() != "Windows" and importlib.util.find_spec("prophet") is not None
+    if model_name == "TimesFM" and is_cloud_deployment():
+        return False
     dependency = MODEL_DEPENDENCIES.get(model_name)
     if dependency is None:
         return True
@@ -344,6 +350,12 @@ def render_model_options(selected_models: list[str]) -> dict:
                 "p": c1.number_input("ARIMA p", min_value=0, max_value=5, value=2, step=1),
                 "d": c2.number_input("ARIMA d", min_value=0, max_value=2, value=1, step=1),
                 "q": c3.number_input("ARIMA q", min_value=0, max_value=5, value=2, step=1),
+            }
+        if "TimesFM" in selected_models:
+            c1, c2 = st.columns(2)
+            options["TimesFM"] = {
+                "context_length": c1.slider("TimesFM context_length", min_value=64, max_value=1024, value=512, step=64),
+                "max_horizon": c2.slider("TimesFM max_horizon", min_value=32, max_value=256, value=128, step=32),
             }
         if "LSTM" in selected_models:
             c1, c2, c3 = st.columns(3)
@@ -427,6 +439,32 @@ def run_batch_experiments(
     return experiments_frame(records), errors
 
 
+def run_rolling_backtest_view(
+    *,
+    raw: pd.DataFrame,
+    date_col: str,
+    target_col: str,
+    horizon: int,
+    selected_models: list[str],
+    model_options: dict,
+    n_splits: int,
+    test_size: int,
+) -> tuple[pd.DataFrame, pd.DataFrame, dict[str, str]]:
+    prepared = prepare_time_series(raw, date_col, target_col)
+    records, errors = rolling_backtest(
+        data=prepared.data,
+        date_col=prepared.date_col,
+        target_col=prepared.target_col,
+        horizon=horizon,
+        freq=prepared.frequency,
+        selected_models=selected_models,
+        model_options=model_options,
+        n_splits=n_splits,
+        test_size=test_size,
+    )
+    return records, summarize_backtest(records), errors
+
+
 st.title("时间序列预测与 LLM 自动分析报告生成系统")
 
 with st.sidebar:
@@ -453,6 +491,10 @@ with st.sidebar:
         batch_horizons_text = st.text_input("预测周期组合", value=str(horizon))
         batch_test_sizes_text = st.text_input("测试集长度组合", value=str(test_size))
         run_batch_button = st.button("运行批量实验")
+    with st.expander("Rolling Backtest（Scikit-learn）", expanded=False):
+        backtest_splits = st.slider("TimeSeriesSplit n_splits", min_value=2, max_value=6, value=3, step=1)
+        backtest_test_size = st.slider("Backtest test_size", min_value=3, max_value=30, value=min(test_size, 14), step=1)
+        run_backtest_button = st.button("运行 Rolling Backtest")
     report_mode = st.radio("报告生成方式", ["本地模板报告", "LLM API"], horizontal=True)
     api_url = "https://api.deepseek.com"
     model_name = "deepseek-v4-flash"
@@ -500,6 +542,45 @@ if run_batch_button:
         if batch_errors:
             with st.expander("批量实验错误详情", expanded=False):
                 st.json(batch_errors)
+
+if run_backtest_button:
+    if not selected_models:
+        st.warning("请至少选择一个模型后再运行 Rolling Backtest。")
+    else:
+        try:
+            backtest_records, backtest_summary, backtest_errors = run_rolling_backtest_view(
+                raw=raw,
+                date_col=date_col,
+                target_col=target_col,
+                horizon=horizon,
+                selected_models=selected_models,
+                model_options=model_options,
+                n_splits=backtest_splits,
+                test_size=backtest_test_size,
+            )
+            st.success(f"Rolling Backtest 完成：{len(backtest_records)} 条 fold 记录。")
+            st.subheader("Rolling Backtest 汇总")
+            st.dataframe(backtest_summary, width="stretch")
+            st.subheader("Rolling Backtest 明细")
+            st.dataframe(backtest_records, width="stretch")
+            bt_cols = st.columns(2)
+            bt_cols[0].download_button(
+                "下载 Backtest 汇总 CSV",
+                data=dataframe_to_csv_bytes(backtest_summary),
+                file_name="rolling_backtest_summary.csv",
+                mime="text/csv",
+            )
+            bt_cols[1].download_button(
+                "下载 Backtest 明细 CSV",
+                data=dataframe_to_csv_bytes(backtest_records),
+                file_name="rolling_backtest_records.csv",
+                mime="text/csv",
+            )
+            if backtest_errors:
+                with st.expander("Rolling Backtest 错误详情", expanded=False):
+                    st.json(backtest_errors)
+        except Exception as exc:
+            st.warning(str(exc))
 
 if run_button or uploaded_file is None:
     try:

@@ -33,7 +33,10 @@ MODEL_DISPLAY_NAMES = {
     "Prophet": "Prophet",
     "Prophet-like Decomposition": "Prophet-like Decomposition",
     "LSTM": "LSTM",
+    "TimesFM": "TimesFM",
 }
+TIMESFM_MODEL_ID = "google/timesfm-2.5-200m-pytorch"
+_TIMESFM_MODEL_CACHE = {}
 
 
 def display_model_name(name: str) -> str:
@@ -314,6 +317,80 @@ def arima_forecast(train, test, date_col, target_col, horizon, freq, p=2, d=1, q
     )
 
 
+def _load_timesfm_model(context_length: int, max_horizon: int):
+    cache_key = (int(context_length), int(max_horizon))
+    if cache_key in _TIMESFM_MODEL_CACHE:
+        return _TIMESFM_MODEL_CACHE[cache_key]
+
+    try:
+        import timesfm
+    except ImportError as exc:
+        raise RuntimeError(
+            "当前环境未安装 TimesFM。请执行：pip install \"timesfm[torch]\""
+        ) from exc
+
+    try:
+        model = timesfm.TimesFM_2p5_200M_torch.from_pretrained(TIMESFM_MODEL_ID)
+        forecast_config = timesfm.ForecastConfig(
+            max_context=int(context_length),
+            max_horizon=int(max_horizon),
+            normalize_inputs=True,
+            use_continuous_quantile_head=True,
+            force_flip_invariance=False,
+            infer_is_positive=False,
+            fix_quantile_crossing=True,
+        )
+        model.compile(forecast_config)
+    except Exception as exc:
+        raise RuntimeError(f"TimesFM 初始化失败：{exc}") from exc
+
+    _TIMESFM_MODEL_CACHE[cache_key] = model
+    return model
+
+
+def _timesfm_predict(model, history: np.ndarray, horizon: int, context_length: int) -> np.ndarray:
+    context = np.asarray(history, dtype=float)[-int(context_length) :].tolist()
+    point_forecast, _ = model.forecast(horizon=int(horizon), inputs=[context])
+    values = np.asarray(point_forecast, dtype=float).reshape(1, -1)[0]
+    if len(values) < horizon:
+        raise RuntimeError(f"TimesFM 返回预测长度不足：期望 {horizon}，实际 {len(values)}。")
+    return values[:horizon]
+
+
+def timesfm_forecast(
+    train,
+    test,
+    date_col,
+    target_col,
+    horizon,
+    freq,
+    context_length=512,
+    max_horizon=128,
+) -> ForecastResult:
+    required_horizon = max(len(test), int(horizon))
+    if required_horizon > int(max_horizon):
+        raise RuntimeError(
+            f"TimesFM 当前 max_horizon={max_horizon}，但需要预测 {required_horizon} 个点。请调大 max_horizon。"
+        )
+    if context_length < 32:
+        raise RuntimeError("TimesFM context_length 至少应为 32。")
+
+    model = _load_timesfm_model(int(context_length), int(max_horizon))
+    train_values = train[target_col].astype(float).to_numpy()
+    test_pred = _timesfm_predict(model, train_values, len(test), int(context_length))
+    full_values = pd.concat([train[target_col], test[target_col]], ignore_index=True).astype(float).to_numpy()
+    future_values = _timesfm_predict(model, full_values, int(horizon), int(context_length))
+    return _result(
+        "TimesFM",
+        date_col,
+        target_col,
+        test,
+        test_pred,
+        future_dates(test[date_col].iloc[-1], horizon, freq),
+        future_values,
+    )
+
+
 def prophet_forecast(train, test, date_col, target_col, horizon, freq) -> ForecastResult:
     if platform.system() == "Windows":
         return prophet_like_decomposition_forecast(train, test, date_col, target_col, horizon, freq)
@@ -377,6 +454,7 @@ def run_selected_models_with_errors(
         "Seasonal Naive": seasonal_naive_forecast,
         "Linear Trend": linear_trend_forecast,
         "ARIMA": arima_forecast,
+        "TimesFM": timesfm_forecast,
         "Prophet-like Decomposition": prophet_like_decomposition_forecast,
         "Prophet": prophet_forecast,
         "LSTM": lstm_forecast,

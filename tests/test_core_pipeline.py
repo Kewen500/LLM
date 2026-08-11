@@ -1,13 +1,16 @@
 from __future__ import annotations
 
+import importlib.util
+
 import pandas as pd
 import pytest
 
 from src.data_preprocess import prepare_time_series, split_train_test
+from src.backtesting import rolling_backtest, summarize_backtest
 from src.diagnostics import fitted_diagnostics_frame, residual_summary_frame
 from src.experiment_tracking import build_experiment_record, experiments_frame
 from src.exporters import dataframe_to_csv_bytes, markdown_to_docx_bytes, markdown_to_pdf_bytes
-from src.forecasting import choose_best_model, run_selected_models_with_errors
+from src.forecasting import choose_best_model, run_selected_models_with_errors, timesfm_forecast
 from src.history_store import validate_supabase_project_url
 from src.metrics import regression_metrics
 from src.rag import retrieve_relevant_context, split_knowledge_text
@@ -160,3 +163,55 @@ def test_supabase_dashboard_url_is_rejected():
         validate_supabase_project_url("https://supabase.com/dashboard/project/demo")
 
     assert validate_supabase_project_url("https://demo.supabase.co/") == "https://demo.supabase.co"
+
+
+def test_rolling_backtest_uses_sklearn_timeseries_split():
+    pytest.importorskip("sklearn")
+
+    raw = pd.DataFrame(
+        {
+            "date": pd.date_range("2025-01-01", periods=50, freq="D"),
+            "sales": [100 + index for index in range(50)],
+        }
+    )
+    prepared = prepare_time_series(raw, "date", "sales")
+    records, errors = rolling_backtest(
+        data=prepared.data,
+        date_col="date",
+        target_col="sales",
+        horizon=5,
+        freq=prepared.frequency,
+        selected_models=["Moving Average"],
+        model_options={"Moving Average": {"window": 3}},
+        n_splits=3,
+        test_size=5,
+    )
+    summary = summarize_backtest(records)
+
+    assert errors == {}
+    assert records["fold"].nunique() == 3
+    assert summary.iloc[0]["model"] == "Moving Average"
+
+
+def test_timesfm_requires_optional_dependency():
+    if importlib.util.find_spec("timesfm"):
+        pytest.skip("TimesFM is installed; skip dependency-missing behavior test.")
+
+    raw = pd.DataFrame(
+        {
+            "date": pd.date_range("2025-01-01", periods=40, freq="D"),
+            "sales": [100 + index for index in range(40)],
+        }
+    )
+    prepared = prepare_time_series(raw, "date", "sales")
+    train, test = split_train_test(prepared.data, "sales", test_size=5)
+
+    with pytest.raises(RuntimeError):
+        timesfm_forecast(
+            train=train,
+            test=test,
+            date_col="date",
+            target_col="sales",
+            horizon=5,
+            freq=prepared.frequency,
+        )

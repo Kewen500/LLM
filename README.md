@@ -10,9 +10,11 @@
 - 多模型预测对比：Moving Average、Seasonal Naive、Linear Trend
 - 传统时间序列模型：ARIMA、Prophet
 - 深度学习模型：基于 PyTorch 的 LSTM 滑动窗口预测
+- TimesFM 本地高级模型：支持 Google TimesFM zero-shot forecasting，可选安装 `timesfm[torch]`
 - Prophet-like Decomposition：当 Windows 环境中的 Stan 优化器不可用时，自动切换到趋势 + 星期周期分解模型
 - Model 参数配置：支持 Moving Average window、Seasonal Naive season_length、ARIMA p/d/q、LSTM lookback/epochs/hidden_size
 - 批量实验记录：支持多组 horizon 与 test_size 组合实验，自动记录最佳模型、MAE、RMSE、MAPE、耗时和参数
+- Rolling Backtest：基于 Scikit-learn `TimeSeriesSplit` 进行多折时间序列验证
 - 可视化诊断页：展示 Actual vs Prediction、Residual、绝对误差、残差统计和未来预测明细
 - MAE、RMSE、MAPE 指标评估
 - 滚动窗口异常点检测
@@ -65,7 +67,7 @@ pip install -r requirements.txt
 pip install -r requirements-advanced.txt
 ```
 
-说明：公开部署默认使用轻量依赖，页面会自动隐藏当前环境未安装的高级模型。`Prophet` 需要安装 `prophet`，`LSTM` 需要安装 `torch`；如果希望本地运行完整模型，请使用上面的 `requirements-advanced.txt`。
+说明：公开部署默认使用轻量依赖，页面会自动隐藏当前环境未安装的高级模型。`Prophet` 需要安装 `prophet`，`LSTM` 需要安装 `torch`，`TimesFM` 需要安装 `timesfm[torch]` 并在首次运行时下载模型权重；如果希望本地运行完整模型，请使用上面的 `requirements-advanced.txt`。
 
 命令行验证核心流程：
 
@@ -127,7 +129,7 @@ OT：油温。
 
 这个项目是 Streamlit 应用，需要部署到支持常驻 Python Web 服务的平台。推荐两种方式：
 
-默认部署使用 `requirements-deploy.txt`，用于保证免费环境启动稳定。这个轻量版本会保留 Moving Average、Seasonal Naive、Linear Trend、ARIMA、LLM API、RAG、导出和历史记录等核心功能；如果部署环境资源充足，可以把 `prophet` 和 `torch` 加入部署依赖来启用 Prophet 与 LSTM。
+默认部署使用 `requirements-deploy.txt`，用于保证免费环境启动稳定。这个轻量版本会保留 Moving Average、Seasonal Naive、Linear Trend、ARIMA、LLM API、RAG、导出和历史记录等核心功能；如果部署环境资源充足，可以把 `prophet`、`torch`、`scikit-learn`、`timesfm[torch]` 加入部署依赖来启用 Prophet、LSTM、Rolling Backtest 与 TimesFM。
 
 ### 方式一：Render
 
@@ -175,4 +177,4 @@ date,sales
 
 ## 简历写法
 
-基于 Time Series Forecasting 与 LLM 构建自动化数据分析系统，支持 CSV 数据上传、数据清洗、趋势预测、异常检测、模型评估和自然语言分析报告生成。使用 Moving Average、Seasonal Naive、Linear Trend、ARIMA、Prophet-like Decomposition、Prophet 与 LSTM 等模型完成预测对比，采用 MAE、RMSE、MAPE 等指标评估模型表现，并支持 Model 参数配置、批量实验记录和残差可视化诊断。项目接入 OpenAI-compatible LLM API，内置 DeepSeek、Kimi、OpenAI、Qwen 等服务商预设，根据结构化预测结果自动生成业务分析报告，支持 Markdown、DOCX、PDF 报告导出及预测结果、评估指标、异常点 CSV 下载，并通过 Pytest 覆盖核心数据处理、模型运行、实验记录和导出流程。
+基于 Time Series Forecasting 与 LLM 构建自动化数据分析系统，支持 CSV 数据上传、数据清洗、趋势预测、异常检测、模型评估和自然语言分析报告生成。使用 Moving Average、Seasonal Naive、Linear Trend、ARIMA、Prophet-like Decomposition、Prophet、PyTorch LSTM 与 TimesFM（本地可选高级依赖）等模型完成预测对比，采用 MAE、RMSE、MAPE 等指标评估模型表现，并支持 Model 参数配置、批量实验记录、基于 Scikit-learn TimeSeriesSplit 的 Rolling Backtest 和残差可视化诊断。项目接入 OpenAI-compatible LLM API，内置 DeepSeek、Kimi、OpenAI、Qwen 等服务商预设，根据结构化预测结果自动生成业务分析报告，支持 Markdown、DOCX、PDF 报告导出及预测结果、评估指标、异常点 CSV 下载，并通过 Pytest 覆盖核心数据处理、模型运行、实验记录和导出流程。
