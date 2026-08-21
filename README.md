@@ -26,6 +26,8 @@
 - 分析运行耗时展示
 - 报告导出：Markdown、DOCX、PDF
 - 数据导出：预测结果 CSV、模型评估 CSV、异常点 CSV
+- Matplotlib 高质量图表：Actual vs Prediction、残差图、模型指标对比条形图，支持 PNG 下载
+- Rolling Backtest：基于 Scikit-learn TimeSeriesSplit 的滚动回测，评估模型稳定性
 - Pytest 自动化测试覆盖核心数据处理、基础模型和导出能力
 
 ## 项目结构
@@ -36,19 +38,30 @@ time-series-llm-report/
 ├── run_pipeline.py
 ├── requirements.txt
 ├── requirements-advanced.txt
+├── requirements-deploy.txt
+├── render.yaml
+├── supabase-schema.sql
 ├── data/
 │   └── sample_sales.csv
 ├── knowledge/
 │   └── ETT数据集业务说明.md
 ├── src/
 │   ├── anomaly_detection.py
+│   ├── backtesting.py
 │   ├── data_preprocess.py
+│   ├── diagnostics.py
+│   ├── experiment_tracking.py
 │   ├── exporters.py
 │   ├── forecasting.py
+│   ├── history_store.py
 │   ├── llm_client.py
 │   ├── llm_presets.py
+│   ├── local_private_settings.py
 │   ├── metrics.py
-│   └── report_generator.py
+│   ├── rag.py
+│   ├── report_generator.py
+│   ├── report_quality.py
+│   └── visualization.py
 └── tests/
     └── test_core_pipeline.py
 ```
@@ -162,7 +175,7 @@ date,sales
 2025-01-02,132
 ```
 
-## 阶段进度
+## 开发状态
 
 1. 已完成：基础模型 Moving Average、Seasonal Naive、Linear Trend。
 2. 已完成：加入 `statsmodels` 的 ARIMA 模型。
@@ -173,8 +186,3 @@ date,sales
 7. 已完成：增加 Markdown、DOCX、PDF 报告导出，以及预测结果、模型指标、异常点 CSV 导出。
 8. 已完成：增加自动化测试，覆盖数据清洗、基础模型运行和导出能力。
 9. 已完成：增加批量实验记录、Model 参数配置和可视化诊断页。
-10. 下一阶段：增加用户登录、实验记录云端查询页和共享报告链接。
-
-## 简历写法
-
-基于 Time Series Forecasting 与 LLM 构建自动化数据分析系统，支持 CSV 数据上传、数据清洗、趋势预测、异常检测、模型评估和自然语言分析报告生成。使用 Moving Average、Seasonal Naive、Linear Trend、ARIMA、Prophet-like Decomposition、Prophet、PyTorch LSTM 与 TimesFM（本地可选高级依赖）等模型完成预测对比，采用 MAE、RMSE、MAPE 等指标评估模型表现，并支持 Model 参数配置、批量实验记录、基于 Scikit-learn TimeSeriesSplit 的 Rolling Backtest 和残差可视化诊断。项目接入 OpenAI-compatible LLM API，内置 DeepSeek、Kimi、OpenAI、Qwen 等服务商预设，根据结构化预测结果自动生成业务分析报告，支持 Markdown、DOCX、PDF 报告导出及预测结果、评估指标、异常点 CSV 下载，并通过 Pytest 覆盖核心数据处理、模型运行、实验记录和导出流程。
